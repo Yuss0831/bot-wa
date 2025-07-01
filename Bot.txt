@@ -1,0 +1,114 @@
+# 1. Install Termux (F-Droid):
+# 👉 https://f-droid.org/packages/com.termux/
+
+# 2. Persiapan Termux
+pkg update && pkg upgrade -y
+pkg install nodejs -y
+pkg install git -y
+pkg install nano -y
+
+# 3. Buat folder bot
+mkdir botwa && cd botwa
+
+# 4. Install modul bot
+npm install @whiskeysockets/baileys pino @hapi/boom qrcode-terminal
+
+# 5. Buat file bot
+nano index.js
+
+
+sc bot wa nyaa untuk di taroh di index.js
+
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  DisconnectReason
+} = require('@whiskeysockets/baileys');
+
+const { Boom } = require('@hapi/boom');
+const pino = require('pino');
+const qrcode = require('qrcode-terminal');
+
+console.log('🤖 Bot Syuzo Beta by Yuss Xy starting...');
+
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    logger: pino({ level: 'silent' }),
+    auth: state,
+    browser: ['Syuzo Beta', 'Chrome', '1.0.0'],
+    markOnlineOnConnect: false,
+    patchMessageBeforeSending: (msg) => {
+      const needsPatch = !!(msg.buttonsMessage || msg.templateMessage || msg.listMessage);
+      return needsPatch
+        ? { viewOnceMessage: { message: { messageContextInfo: {}, ...msg } } }
+        : msg;
+    }
+  });
+
+  // Simpan kredensial jika berubah
+  sock.ev.on('creds.update', saveCreds);
+
+  // Tampilkan QR secara manual
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      console.log('📲 Scan QR dengan WhatsApp:');
+      qrcode.generate(qr, { small: true });
+    }
+
+    if (connection === 'close') {
+      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      if (reason === DisconnectReason.loggedOut) {
+        console.log('❌ Terlogout. Jalankan ulang untuk pairing ulang.');
+      } else {
+        console.log('🔄 Reconnecting...');
+        startBot();
+      }
+    }
+
+    if (connection === 'open') {
+      console.log('✅ Terhubung ke WhatsApp!');
+    }
+  });
+
+  // Saat pesan masuk
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.message || msg.key.fromMe) return;
+
+    const from = msg.key.remoteJid;
+    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+
+    console.log(`📩 ${from}: ${text}`);
+
+    // Ketik "menu" untuk melihat tombol
+    if (text.toLowerCase() === 'menu') {
+      await sock.sendMessage(from, {
+        text: '👋 Hai! Ini *Syuzo Beta*\nPilih tombol di bawah:',
+        buttons: [
+          { buttonId: 'ping', buttonText: { displayText: '🏓 Ping' }, type: 1 },
+          { buttonId: 'owner', buttonText: { displayText: '👤 Owner' }, type: 1 }
+        ],
+        headerType: 1
+      });
+    }
+
+    // Tanggapan tombol
+    if (msg.message?.buttonsResponseMessage) {
+      const id = msg.message.buttonsResponseMessage.selectedButtonId;
+      if (id === 'ping') {
+        await sock.sendMessage(from, { text: '🏓 *Pong!* Syuzo Beta aktif.' });
+      } else if (id === 'owner') {
+        await sock.sendMessage(from, { text: '👤 Owner: *Yuss Xy*\n📱 wa.me/628XXXXXXXXXX' });
+      }
+    }
+  });
+}
+
+startBot();
+
+
